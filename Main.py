@@ -10,13 +10,17 @@ from aiogram.fsm.state import State, StatesGroup
 from google import genai
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 logging.basicConfig(level=logging.INFO)
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
-ai_client = genai.Client(api_key=GEMINI_API_KEY)
+
+def get_ai_client():
+    key = os.getenv("GEMINI_API_KEY")
+    if not key:
+        return None
+    return genai.Client(api_key=key)
 
 class StudioStates(StatesGroup):
     waiting_for_topic = State()
@@ -43,6 +47,11 @@ async def ask_topic(message: Message, state: FSMContext):
 
 @dp.message(StudioStates.waiting_for_topic)
 async def make_scenario(message: Message, state: FSMContext):
+    client = get_ai_client()
+    if not client:
+        await message.answer("Xatolik: GEMINI_API_KEY kaliti topilmadi!")
+        return
+
     wait_msg = await message.answer("⏳ AI ssenariy va promtlarni tayyorlamoqda...")
     prompt = (
         "Siz mobilograflar uchun professional visual-direktorsiz. "
@@ -50,12 +59,16 @@ async def make_scenario(message: Message, state: FSMContext):
         "AI video generatorlar (Luma, Kling, Runway) uchun inglizcha promtlar yozib bering:\n\n"
         f"Mavzu: {message.text}"
     )
-    response = ai_client.models.generate_content(
-        model='gemini-2.5-flash',
-        contents=prompt
-    )
-    await wait_msg.delete()
-    await message.answer(response.text)
+    try:
+        response = client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=prompt
+        )
+        await wait_msg.delete()
+        await message.answer(response.text)
+    except Exception as e:
+        await wait_msg.delete()
+        await message.answer(f"Xatolik yuz berdi: {str(e)}")
     await state.clear()
 
 @dp.message(F.text == "👤 Profil & Balans")
@@ -63,7 +76,7 @@ async def profile(message: Message):
     await message.answer(f"Sizning ID: `{message.from_user.id}`\nBalans: 10 ta bepul kredit", parse_mode="Markdown")
 
 async def handle_ping(request):
-    return web.Response(text="Bot ishlamoqda!")
+    return web.Response(text="Bot muvaffaqiyatli ishlamoqda!")
 
 async def start_web_server():
     app = web.Application()
@@ -80,4 +93,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-
